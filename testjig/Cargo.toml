@@ -1,0 +1,18 @@
+[package]
+name = "testjig"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anchor = { path = "../anchor", features = ["std"] }
+tempfile = "3"
+nix = { version = "0.25", features = ["term", "fs"] }
+lazy_static = "1"
+
+[build-dependencies]
+anchor_codegen = { path = "../anchor_codegen" }
+
+[features]
+skipped_command = []
