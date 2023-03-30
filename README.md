@@ -48,6 +48,23 @@ Anchor is licensed under the MIT license, which means you can do pretty much
 whatever you want with it. Please see [LICENSE.txt](LICENSE.txt) for more
 information.
 
+## Anchor Projects
+
+We want to showcase new and interesting uses of Anchor as we are very excited
+about this new implementation. If you've made something with Anchor, drop a
+line. We'd love to add you to this list.
+
+  * [Beacon3D](https://beacon3d.com/) is a novel eddy current surface scanner
+    that can scan your bed in seconds.
+
+  * [Crampon](https://github.com/Annex-Engineering/crampon_anchor) This nozzle
+    based accelerometer was reimplemented in Anchor to demonstrate how quickly
+    one can bring up a new device.
+
+  * [Rampon](https://github.com/rogerlz/rampon_anchor) The popular KUSBA
+    resonance measuring device firmware was reimplemented using Anchor as well,
+    fixing some minor firmware bugs in the original implementation.
+
 ## Acknowledgements
 
 This project is in no way endorsed by the Klipper project. Please do not direct
