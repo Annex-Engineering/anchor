@@ -2,6 +2,9 @@ use crate::State;
 use anchor::*;
 
 #[klipper_command]
+pub fn debug_nop() {}
+
+#[klipper_command]
 pub fn emergency_stop() {}
 
 #[klipper_command]

@@ -1,13 +1,5 @@
 [workspace]
 
-members = [
-  "anchor",
-  "anchor_codegen",
-  "anchor_macro",
-  "testjig"
-]
+members = ["anchor", "anchor_codegen", "anchor_macro", "testjig"]
 
-exclude = [
-  "rp2040_demo",
-  "esp32c3_demo",
-]
+exclude = ["rp2040_demo", "esp32c3_demo", "nrf52840_rtic_demo"]
