@@ -20,7 +20,7 @@ embassy-futures = { version = "0.1.1", features = ["defmt"] }
 anchor = { git = "https://github.com/Annex-engineering/anchor.git" }
 rtic-sync = { version = "1.2.0", features = ["embedded-hal"] }
 embedded-hal-async = "1.0.0"
-bbqueue = "0.5.1"
+bbqueue = { version = "0.5.1", features = ["defmt_0_3"] }
 embassy-sync = "0.5.0"
 heapless = "0.8.0"
 fugit = { version = "0.3.7", features = ["defmt"] }

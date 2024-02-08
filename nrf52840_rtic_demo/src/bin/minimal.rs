@@ -11,13 +11,10 @@ use anchor::klipper_config_generate;
 mod app {
 
     use anchor::*;
-    use core::cell::RefCell;
+    use bbqueue::BBBuffer;
     use core::mem::MaybeUninit;
     use embassy_nrf::usb::{vbus_detect::HardwareVbusDetect, Driver as UsbDriver};
-    use embassy_sync::{
-        blocking_mutex::{raw::CriticalSectionRawMutex, CriticalSectionMutex},
-        signal::Signal,
-    };
+    use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
     use embassy_usb::{
         class::cdc_acm::{self, CdcAcmClass},
         driver::EndpointError,
@@ -52,6 +49,7 @@ mod app {
         cdc_sender: cdc_acm::Sender<'static, HalUsbDriver>,
         cdc_receiver: cdc_acm::Receiver<'static, HalUsbDriver>,
         cdc_control: cdc_acm::ControlChanged<'static>,
+        usb_tx_consumer: bbqueue::Consumer<'static, USB_TX_BUFFER_SIZE>,
     }
 
     struct UsbData {
@@ -74,7 +72,11 @@ mod app {
         }
     }
 
-    #[init(local = [usb_data: UsbData = UsbData::new(), usb_acm_state: MaybeUninit<cdc_acm::State<'static>> = MaybeUninit::uninit()])]
+    #[init(local = [
+        usb_data: UsbData = UsbData::new(),
+        usb_acm_state: MaybeUninit<cdc_acm::State<'static>> = MaybeUninit::uninit(),
+        usb_tx_queue: BBBuffer<USB_TX_BUFFER_SIZE> = BBBuffer::new(),
+    ])]
     fn init(cx: init::Context) -> (Shared, Local) {
         defmt::info!("init");
 
@@ -124,6 +126,11 @@ mod app {
         let timer4: nrf52840_hal::pac::TIMER4 = unsafe { core::mem::transmute(()) };
         Timer::start(timer4, token);
 
+        let (usb_tx_prod, usb_tx_consumer) = cx.local.usb_tx_queue.try_split().unwrap();
+        unsafe {
+            USB_TX_PRODUCER = MaybeUninit::new(usb_tx_prod);
+        }
+
         (
             Shared {
                 // Initialization of shared resources go here
@@ -135,6 +142,7 @@ mod app {
                 cdc_sender,
                 cdc_receiver,
                 cdc_control,
+                usb_tx_consumer,
             },
         )
     }
@@ -180,35 +188,39 @@ mod app {
         }
     }
 
-    #[task(priority = 1, local = [cdc_sender])]
+    #[task(priority = 1, local = [cdc_sender, usb_tx_consumer])]
     async fn usb_task_send(cx: usb_task_send::Context) {
         let sender = cx.local.cdc_sender;
         loop {
             sender.wait_connection().await;
+            let mut more = false;
             loop {
-                let mut tx_buf = FifoBuffer::<128>::new();
-                loop {
-                    if tx_buf.is_empty() {
-                        USB_TX_WAITING.wait().await;
-                        USB_TX_BUFFER.lock(|buffer| {
-                            let mut buffer = buffer.borrow_mut();
-                            let n = buffer.len();
-                            tx_buf.extend(buffer.data());
-                            buffer.pop(n);
-                        })
-                    }
-                    if tx_buf.is_empty() {
+                if !more {
+                    USB_TX_WAITING.wait().await;
+                }
+                let grant = match cx.local.usb_tx_consumer.read() {
+                    Ok(grant) => grant,
+                    Err(e) => {
+                        defmt::info!("Error: {}", e);
+                        more = false;
                         continue;
                     }
-                    let n = tx_buf.len().clamp(0, sender.max_packet_size() as usize);
-                    defmt::trace!("Klipper protocol SEND, {} bytes", n);
-                    match sender.write_packet(&tx_buf.data()[..n]).await {
-                        Ok(_) => tx_buf.pop(n),
-                        Err(EndpointError::BufferOverflow) => {}
-                        Err(e) => {
-                            defmt::error!("USB send error: {}", e);
-                            break;
-                        }
+                };
+                let len = grant.buf().len();
+                let take = len.clamp(0, sender.max_packet_size() as usize);
+
+                defmt::trace!("Klipper protocol SEND, {} bytes", take);
+                match sender.write_packet(&grant.buf()[..take]).await {
+                    Ok(_) => {
+                        grant.release(take);
+                        more = len != take;
+                    }
+                    Err(EndpointError::BufferOverflow) => {
+                        more = true;
+                    }
+                    Err(e) => {
+                        defmt::error!("USB send error: {}", e);
+                        break;
                     }
                 }
             }
@@ -278,8 +290,9 @@ mod app {
     #[klipper_command]
     pub fn debug_nop() {}
 
-    static USB_TX_BUFFER: CriticalSectionMutex<RefCell<FifoBuffer<128>>> =
-        CriticalSectionMutex::new(RefCell::new(FifoBuffer::new()));
+    const USB_TX_BUFFER_SIZE: usize = 512;
+    static mut USB_TX_PRODUCER: MaybeUninit<bbqueue::Producer<'static, USB_TX_BUFFER_SIZE>> =
+        MaybeUninit::uninit();
     static USB_TX_WAITING: Signal<CriticalSectionRawMutex, ()> = Signal::new();
     pub struct BufferTransportOutput;
     pub const TRANSPORT_OUTPUT: BufferTransportOutput = BufferTransportOutput;
@@ -290,8 +303,13 @@ mod app {
             let mut scratch = ScratchOutput::new();
             f(&mut scratch);
             let output = scratch.result();
-            USB_TX_BUFFER.lock(|buffer| buffer.borrow_mut().extend(output));
-            USB_TX_WAITING.signal(());
+
+            let producer = unsafe { USB_TX_PRODUCER.assume_init_mut() };
+            if let Ok(mut grant) = producer.grant_exact(output.len()) {
+                grant.buf().copy_from_slice(output);
+                grant.commit(output.len());
+                USB_TX_WAITING.signal(());
+            }
         }
     }
 }
