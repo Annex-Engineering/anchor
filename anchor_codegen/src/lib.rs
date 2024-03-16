@@ -612,6 +612,7 @@ impl Processor {
             quote! {
                 #![allow(dead_code)]
                 #![allow(unused_variables)]
+                #![allow(clippy::all)]
 
                 use ::anchor::{transport_output::TransportOutput, transport::Transport};
                 pub mod message_handlers {
