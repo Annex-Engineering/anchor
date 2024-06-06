@@ -26,7 +26,7 @@ impl Arg {
 #[derive(Debug, Eq, PartialEq)]
 pub struct Command {
     pub name: Ident,
-    pub id: Option<u8>,
+    pub id: Option<u16>,
     pub handler_name: Ident,
     pub module: Option<Vec<Ident>>,
     pub has_context: bool,

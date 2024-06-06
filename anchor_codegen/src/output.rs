@@ -6,7 +6,7 @@ use syn::{parse::Parse, token::Comma, Expr, Ident, LitStr, Type};
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Output {
-    pub id: Option<u8>,
+    pub id: Option<u16>,
     pub format: String,
     pub args: Vec<Arg>,
 }

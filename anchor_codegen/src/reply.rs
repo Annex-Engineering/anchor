@@ -10,7 +10,7 @@ use syn::{
 #[derive(Debug, Eq, PartialEq)]
 pub struct Reply {
     pub name: Ident,
-    pub id: Option<u8>,
+    pub id: Option<u16>,
     pub args: Vec<Arg>,
 }
 

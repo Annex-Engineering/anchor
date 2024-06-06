@@ -172,7 +172,7 @@ enum Message {
 }
 
 impl Message {
-    fn id(&self) -> Option<u8> {
+    fn id(&self) -> Option<u16> {
         match self {
             Message::Command(c) => c.id,
             Message::Reply(r) => r.id,
@@ -180,7 +180,7 @@ impl Message {
         }
     }
 
-    fn set_id(&mut self, id: Option<u8>) {
+    fn set_id(&mut self, id: Option<u16>) {
         match self {
             Message::Command(c) => c.id = id,
             Message::Reply(r) => r.id = id,
@@ -231,9 +231,9 @@ struct Dictionary {
     version: String,
 
     config: BTreeMap<String, serde_json::Value>,
-    commands: BTreeMap<String, u8>,
-    responses: BTreeMap<String, u8>,
-    output: BTreeMap<String, u8>,
+    commands: BTreeMap<String, i16>,
+    responses: BTreeMap<String, i16>,
+    output: BTreeMap<String, i16>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     enumerations: BTreeMap<String, DictionaryEnumeration>,
 }
@@ -540,10 +540,10 @@ impl Processor {
             }
         }
 
-        let mut next_id = 0u8;
+        let mut next_id = 0u16;
         let mut assign_id = || {
             let mut id = next_id;
-            if id == 255 {
+            if id == 16384 {
                 panic!("Too many commands");
             }
             while used_ids.contains(&id) {
@@ -561,23 +561,42 @@ impl Processor {
         }
     }
 
+    fn convert_id(id: u16) -> i16 {
+        let encoded = if id >= 0x80 {
+            vec![((id >> 7) | 0x80) as u8, (id & 0x7F) as u8]
+        } else {
+            vec![id as u8]
+        };
+
+        let mut c = encoded[0] as u32;
+        let mut v = c & 0x7F;
+        if (c & 0x60) == 0x60 {
+            v |= (-0x20i32) as u32;
+        }
+        while c & 0x80 != 0 {
+            c = encoded[1] as u32;
+            v = (v << 7) | (c & 0x7F);
+        }
+        v as i16
+    }
+
     fn finalize_dictionary(&mut self) {
         for m in self.messages.values() {
             match m {
                 Message::Command(c) => {
                     self.dictionary
                         .commands
-                        .insert(c.get_desc_string(), c.id.unwrap());
+                        .insert(c.get_desc_string(), Self::convert_id(c.id.unwrap()));
                 }
                 Message::Reply(r) => {
                     self.dictionary
                         .responses
-                        .insert(r.get_desc_string(), r.id.unwrap());
+                        .insert(r.get_desc_string(), Self::convert_id(r.id.unwrap()));
                 }
                 Message::Output(o) => {
                     self.dictionary
                         .output
-                        .insert(o.format.clone(), o.id.unwrap());
+                        .insert(o.format.clone(), Self::convert_id(o.id.unwrap()));
                 }
             }
         }
@@ -643,7 +662,7 @@ impl Processor {
     }
 
     fn write_message_dispatcher(&self) -> TokenStream {
-        let mut handlers = vec![None; 256];
+        let mut handlers = vec![None; 16384];
 
         for m in self.messages.values() {
             let id = m.id().unwrap();
@@ -661,7 +680,7 @@ impl Processor {
         let handlers: Vec<_> = handlers.into_iter().flatten().collect();
 
         quote! {
-            fn dispatch(cmd: u8, frame: &mut &[u8], context: &mut Context) -> Result<(), ::anchor::encoding::ReadError> {
+            fn dispatch(cmd: u16, frame: &mut &[u8], context: &mut Context) -> Result<(), ::anchor::encoding::ReadError> {
                 match cmd {
                     #(#handlers)*
                     _unknown_cmd => Err(::anchor::encoding::ReadError),
@@ -732,10 +751,9 @@ impl Processor {
                     quote! {
                         pub fn #name ( #(#args),* ) {
                             TRANSPORT.encode_frame(|output: &mut <Output as TransportOutput>::Output| {
-                                use ::anchor::OutputBuffer;
                                 #[allow(unused_imports)]
                                 use ::anchor::encoding::*;
-                                output.output(&[#id]);
+                                <u16 as ::anchor::encoding::Writable>::write(&#id, output);
                                 #(#writers)*
                             });
                         }
@@ -774,10 +792,9 @@ impl Processor {
                     quote! {
                         pub fn #name ( #(#args),* ) {
                             TRANSPORT.encode_frame(|output: &mut <Output as TransportOutput>::Output| {
-                                use ::anchor::OutputBuffer;
                                 #[allow(unused_imports)]
                                 use ::anchor::encoding::*;
-                                output.output(&[#id]);
+                                <u16 as ::anchor::encoding::Writable>::write(&#id, output);
                                 #(#writers)*
                             });
                         }

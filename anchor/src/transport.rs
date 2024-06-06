@@ -31,7 +31,7 @@ pub trait Config {
     type TransportOutput: TransportOutput;
     type Context<'c>;
     fn dispatch<'c>(
-        cmd: u8,
+        cmd: u16,
         frame: &mut &[u8],
         context: &mut Self::Context<'c>,
     ) -> Result<(), ReadError>;
@@ -131,7 +131,7 @@ impl<C: Config> Transport<C> {
         context: &mut C::Context<'c>,
     ) -> Result<(), ReadError> {
         while !frame.is_empty() {
-            let cmd = next_byte(&mut frame)?;
+            let cmd = <u16 as Readable>::read(&mut frame)?;
             C::dispatch(cmd, &mut frame, context)?;
         }
         Ok(())
